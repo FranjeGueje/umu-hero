@@ -56,20 +56,19 @@ function update_new_version(){
         # Es un appimage y si tengo internet
         if curl -s --head --request GET https://api.github.com --max-time 3 | grep "HTTP/" 2>/dev/null >/dev/null; then
             local sha_web
-            sha_web=$(curl -L "$(curl -s https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest | grep browser_download_url | cut -d '"' -f 4 | grep sha512sum)" >/dev/null 2>&1)
+            sha_web=$(curl -L "$(curl -s https://api.github.com/repos/FranjeGueje/umu-hero/releases/latest | grep browser_download_url | cut -d '"' -f 4 | grep sha512sum 2>/dev/null)" 2>/dev/null)
             if diff <(sha512sum "$APPIMAGE" | cut -d ' ' -f1) <(echo "$sha_web" | cut -d ' ' -f1) >/dev/null 2>&1; then
                 to_debug_file "[INFO] Is the same version"
             else
                 if show_question "There is a new version of $NOMBRE. Do you want download it?" ; then
                     to_debug_file "[WARING] Updating $NOMBRE"
-                    #URL=$(curl -s https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest | grep browser_download_url | cut -d '"' -f 4 | grep AppImage)
                     local URL
-                    URL=$(curl -s https://api.github.com/repos/xemu-project/xemu/releases/latest | grep browser_download_url | cut -d '"' -f 4 | grep -v dbg | grep x86_64| grep ".AppImage")
+                    URL=$(curl -s https://api.github.com/repos/FranjeGueje/umu-hero/releases/latest | grep browser_download_url | cut -d '"' -f 4 | grep x86_64| grep ".AppImage")
                     wget -O "$APPIMAGE".bak -q --show-progress "$URL" >/dev/null 2>&1
                     if [ $? -eq 0 ]; then
                         to_debug_file "[INFO] Uploaded to last version."
                         show_info "Uploaded to last version.\nRun again $NOMBRE"
-                        mv "$APPIMAGE".bak "$APPIMAGE"
+                        mv "$APPIMAGE".bak "$APPIMAGE" && chmod +x "$APPIMAGE"
                         exit 0
                     else
                         to_debug_file "[ERROR] Cannot download the latest version."
