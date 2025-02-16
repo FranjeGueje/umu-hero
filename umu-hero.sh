@@ -224,7 +224,11 @@ function download_database() {
     wget https://umu.openwinecomponents.org/umu_api.php -q -O "$__umu_temp"
 
     if which git > /dev/null 2>&1; then
-        (cd "$HOME/.local/share/umu-hero/" && git clone https://github.com/Open-Wine-Components/umu-protonfixes)
+        if [ -d "$PROTONFIXES_PATH" ];then
+            (cd "$PROTONFIXES_PATH" && git pull)
+        else
+            (cd "$HOME/.local/share/umu-hero/" && git clone https://github.com/Open-Wine-Components/umu-protonfixes)
+        fi
     fi
 
     if [ "$(stat -c %s "$__umu_temp")" -eq 0 ];then
