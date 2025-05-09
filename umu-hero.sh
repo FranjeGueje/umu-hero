@@ -5,7 +5,7 @@
 #
 function pre_launch(){
     NOMBRE="UMU-Hero"
-    VERSION=1
+    VERSION=1.1
 
     [ -z "$TOOLOPTIONFILE" ] && TOOLOPTIONFILE="$HOME/.config/umu-hero.conf"
     STEAM_DIR="$HOME/.local/share/Steam/"
@@ -20,7 +20,6 @@ function pre_launch(){
     LAUNCHER_PATH="$TOOL_PATH"/launchers/
     JQ="$BIN_PATH"jq
     YAD="$BIN_PATH"yad
-    GRIDER="$BIN_PATH"grider
     SHORTCUTSNAMEID="$BIN_PATH"shortcutsNameID
     UMULAUNCHER="$BIN_PATH"umu-run
 
@@ -65,6 +64,7 @@ function update_new_version(){
                     local URL
                     URL=$(curl -s https://api.github.com/repos/FranjeGueje/umu-hero/releases/latest | grep browser_download_url | cut -d '"' -f 4 | grep x86_64| grep ".AppImage")
                     wget -O "$APPIMAGE".bak -q --show-progress "$URL" >/dev/null 2>&1
+                    # shellcheck disable=SC2181
                     if [ $? -eq 0 ]; then
                         to_debug_file "[INFO] Uploaded to last version."
                         show_info "Uploaded to last version.\nRun again $NOMBRE"
@@ -197,6 +197,60 @@ function add_steam_game() {
 
 }
 
+##
+# download_grids
+# Download the images (grids) for a game
+# 
+# $1 = gridkey, token
+# $2 = name of game
+# $3 = id_steam, name of image files
+#
+function download_grids() {
+
+    local __token="$1" __name="$2" __fichero="$3"
+    local json __name_encoded
+
+    json=$(mktemp)
+    # shellcheck disable=SC2016
+    __name_encoded=$("$JQ" -nr --arg str "$__name" '$str|@uri')
+    curl -s -X GET -H "Authorization: Bearer $__token" "https://www.steamgriddb.com/api/v2/search/autocomplete/$__name_encoded" > "$json"
+    if [ "$("$JQ" -r '.data | length' < "$json")" -gt 0 ]; then
+        local __id=
+        __id=$("$JQ" -r .data[0].id < "$json")
+
+        # GRID_H
+        curl -s -X GET -H "Authorization: Bearer $__token" "https://www.steamgriddb.com/api/v2/grids/game/$__id?limit=1&dimensions=460x215" > "$json"
+        if [ "$("$JQ" -r .success < "$json")" == "true" ] && [ "$("$JQ" -r .total < "$json")" -gt 0 ]; then
+            curl -s -o "$__fichero".png "$("$JQ" -r .data[0].url < "$json")"
+        fi
+
+        # GRID_V
+        curl -s -X GET -H "Authorization: Bearer $__token" "https://www.steamgriddb.com/api/v2/grids/game/$__id?limit=1&dimensions=600x900" > "$json"
+        if [ "$("$JQ" -r .success < "$json")" == "true" ] && [ "$("$JQ" -r .total < "$json")" -gt 0 ]; then
+            curl -s -o "$__fichero"p.png "$("$JQ" -r .data[0].url < "$json")"
+        fi
+
+        # HEROES
+        curl -s -X GET -H "Authorization: Bearer $__token" "https://www.steamgriddb.com/api/v2/heroes/game/$__id?limit=1" > "$json"
+        if [ "$("$JQ" -r .success < "$json")" == "true" ] && [ "$("$JQ" -r .total < "$json")" -gt 0 ]; then
+            curl -s -o "$__fichero"_hero.png "$("$JQ" -r .data[0].url < "$json")"
+        fi
+
+        # LOGOS
+        curl -s -X GET -H "Authorization: Bearer $__token" "https://www.steamgriddb.com/api/v2/logos/game/$__id?limit=1" > "$json"
+        if [ "$("$JQ" -r .success < "$json")" == "true" ] && [ "$("$JQ" -r .total < "$json")" -gt 0 ]; then
+            curl -s -o "$__fichero"_logo.png "$("$JQ" -r .data[0].url < "$json")"
+        fi
+
+        # ICONS
+        curl -s -X GET -H "Authorization: Bearer $__token" "https://www.steamgriddb.com/api/v2/icons/game/$__id?limit=1" > "$json"
+        if [ "$("$JQ" -r .success < "$json")" == "true" ] && [ "$("$JQ" -r .total < "$json")" -gt 0 ]; then
+            curl -s -o "$__fichero"_icon.ico "$("$JQ" -r .data[0].url < "$json")"
+        fi
+
+    fi
+    rm "$json"
+}
 #!#################################### UMU Function
 
 ##
@@ -641,12 +695,15 @@ Are you sure to continue?";then
                 # Link the prefix
                 if [ "$GRIDKEY" != "0" ];then
                     to_debug_file "[INFO] InstallMenu: It will download the grid images for $__name."
-                    mkdir -p /tmp/"$NOMBRE"
-
-                    ("$GRIDER" -dest "/tmp/$NOMBRE" "$GRIDKEY" "$__name" "$__id_steam" ;
+                    local __dir_tmp=
+                    __dir_tmp=$(mktemp -d /tmp/"$NOMBRE".XXXXXX)
+                    
+                    (cd "$__dir_tmp" && download_grids "$GRIDKEY" "$__name" "$__id_steam"
                     for dir in "$STEAM_DIR"/userdata/*/config/grid; do 
-                        cp /tmp/"$NOMBRE"/* "$dir" 
-                    done ; rm -Rf "/tmp/$NOMBRE") &
+                        cp "$__dir_tmp"/* "$dir" 
+                    done
+                    rm -r "$__dir_tmp"
+                    ) &
 
                 fi
                 local __prefix
@@ -657,7 +714,7 @@ Are you sure to continue?";then
                 cp "$LINKS_PATH"/* "$STEAM_DIR"/steamapps/compatdata/"$__id_steam"/pfx/drive_c/. -Rf
                 show_info "$__name was successfully added to Steam."
                 # Search the game in umu-database
-                prepare_umu-prefix "$__id" "$__store"
+                prepare_umu-prefix umu-"$__id" "$__store"
                 if show_question "Would you like to open the properties of the newly added game?";then
                     xdg-open "steam://gameproperties/$__id_steam"
                 fi
@@ -858,7 +915,7 @@ function installMenu() {
 
     while [ $__boton -ne 1 ] && [ $__boton -ne 252 ]; do
         __salida=$("$YAD" "$TITLE" "$ICON" --center --list --width=640 --height=400 --hide-column=2 --sticky --no-markup --buttons-layout=spread \
-            --button="Hiper-Connect to Steam!$ADD_ICON!Add a game to Steam using third-party launchers on Windows, search the protonfix in umu-databas, link the prefix, ...":0 \
+            --button="Hyper-Connect to Steam!$ADD_ICON!Add a game to Steam using third-party launchers on Windows, search the protonfix in umu-databas, link the prefix, ...":0 \
             --button="Only Create UMU-Prefix!$UMU_ICON!Create the prefix applying the fixes on umu-database. NOT add to Steam":10 \
             --button="Cancel!$EXIT_ICON!Cancel this menu":252 \
             --column=Store --column=ID --column=Title "${INSTALLED_GAMES[@]}")
@@ -876,7 +933,7 @@ function installMenu() {
         case $__boton in
         0)  do_install_game "$__name" "$__store" "$__id" ;;
         10) to_debug_file "[INFO] InstallMenu: Start UMU-Prefix."
-            prepare_umu-prefix "$__id" "$__store"
+            prepare_umu-prefix umu-"$__id" "$__store"
             ;;
         *)  to_debug_file "[INFO] InstallMenu: Canceled." ;;
         esac
@@ -931,7 +988,7 @@ function optionMenu() {
 function aboutMenu() {
     "$YAD" "$TITLE" "$ICON" --about --fixed --pname="$NOMBRE" --pversion="$VERSION" --comments='Plugin, add-on, companion to our Heroic Games Launcher. In addition, a UMU client and a UMU prefix creator.' \
         --authors="Paco Guerrero [fjgj1@hotmail.com]" --website="https://github.com/FranjeGueje"
-    show_info "Versions:\n\t*Legendary (Windows) - 0.20.34\n\t*Nile (Windows) - 1.1.2\n\t*GOGDL (Windows) - 2.15.2\n\t*UMU-launcher - version 1.2.3 (3.11.7 (main, Jan 29 2024, 16:03:57) [GCC 13.2.1 20230801])'\n\n\
+    show_info "Versions:\n\t*Legendary (Windows) - 0.20.34\n\t*Nile (Windows) - 1.1.2\n\t*GOGDL (Windows) - 2.15.2\n\t*UMU-launcher - version 1.2.6 (3.11.7 (main, Jan 29 2024, 16:03:57) [GCC 13.2.1 20230801])'\n\n\
 Thanks to my family for their patience... My wife and children have earned heaven.\nAnd to you, my Elena." 
 }
 
