@@ -1,11 +1,24 @@
 #!/bin/bash
 
+##############################################################################################################################################################
+# AUTOR: Paco Guerrero <fjgj1@hotmail.com> - FranjeGueje
+# LICENSE of file: MIT (haz con él lo que quieras, pero cítame)
+# ABOUT: Crea prefix del proyecto UMU. Añade juegos a Steam. Corre juegos sin utilizar heroic. Complemento perfecto para Heroic.
+#        Creates prefixes from UMU project. Add games to Steam. Run games without using heroic. Perfect complement for Heroic.
+# PARAMETERS:
+#   VARIBLE:
+#       DEBUG=Y -> verbose output
+# SALIDAS/EXITs:
+#   0: Todo correcto, llegamos al final. All correct, we have reached the end.
+#
+##############################################################################################################################################################
+
 ##
 # Initialize the script
 #
 function pre_launch(){
     NOMBRE="UMU-Hero"
-    VERSION=1.1
+    VERSION=1.2
 
     [ -z "$TOOLOPTIONFILE" ] && TOOLOPTIONFILE="$HOME/.config/umu-hero.conf"
     STEAM_DIR="$HOME/.local/share/Steam/"
@@ -326,15 +339,27 @@ function search_umu-game() {
     fi
     local __store=$1 __id=$2
     local __umu_game __result=1
+    local __nombre __umu_id
     if __umu_game=$(curl -s "https://umu.openwinecomponents.org/umu_api.php?store=$__store&codename=$__id");then
         if echo "$__umu_game" | grep -w "\[\]"; then
-            to_debug_file "[WARNING] search_umu-game: Game NOT found on umu-database."
+            to_debug_file "[WARNING] search_umu-game: Game NOT found on umu-database on web."
             __result=1
         else
             __nombre=$(echo -e "$__umu_game" | "$JQ" -r '.[].title')
             __umu_id=$(echo -e "$__umu_game" | "$JQ" -r '.[].umu_id')
             to_debug_file "[INFO] search_umu-game: Game FOUND on umu-database: $__nombre | $__umu_id"
             echo -e "$__umu_id"
+            __result=0
+        fi
+    elif [ -f "$DATABASE_FILE" ]; then
+        # shellcheck disable=SC2016
+        __umu_game=$("$JQ" -r --arg store "$__store" --arg codename "$__id" '.[] | select(.store == $store and .codename == $codename) | .umu_id' < "$DATABASE_FILE" )
+        if [ -z "$__umu_game" ];then
+            to_debug_file "[WARNING] search_umu-game: Game NOT found on umu-database in offline file."
+            __result=1
+        else
+            to_debug_file "[INFO] search_umu-game: Game FOUND on umu-database: $__umu_game"
+            echo -e "$__umu_game"
             __result=0
         fi
     else
@@ -372,7 +397,8 @@ function prepare_umu-prefix() {
         fi
         fBarra "Please, wait... YES, be pacient...\n\n$NOMBRE is creating the prefix with the fixes." &  
         sleep 1
-        WINEPREFIX="$__prefix" GAMEID="$__game_id" PROTONPATH="$__proton" STORE="$__store" "$UMULAUNCHER" "exit"
+        to_debug_file "[INFO] prepare_umu-prefix: WINEPREFIX=$__prefix GAMEID=$__umu_id PROTONPATH=$__proton STORE=$__store $UMULAUNCHER"
+        WINEPREFIX="$__prefix" GAMEID="$__umu_id" PROTONPATH="$__proton" STORE="$__store" "$UMULAUNCHER" "exit"
         cp "$LINKS_PATH"/* "$__prefix"/pfx/drive_c/. -Rf
 
         fBarraStop
@@ -742,21 +768,21 @@ function read_installed_games() {
     # GOG
     if [ -f "$MOUNT_PATH"/gog_store/installed.json ]; then
         to_debug_file "[INFO] read_installed_games: Searching installed games on GOG."
-        mapfile -t installed_gog < <("$JQ" -r '.installed[]  | "GOG\n\(.appName)\n\(.install_path)"' "$MOUNT_PATH"/gog_store/installed.json | sed 's/.*\\\(.*\)/\1/' | iconv -c)
+        mapfile -t installed_gog < <("$JQ" -r '.installed[]  | "gog\n\(.appName)\n\(.install_path)"' "$MOUNT_PATH"/gog_store/installed.json | sed 's/.*\\\(.*\)/\1/' | iconv -c)
     fi
 
     ##############################
     # EPIC
     if [ -f "$MOUNT_PATH"/legendary/installed.json ]; then
         to_debug_file "[INFO] read_installed_games: Searching installed games on EPID."
-        mapfile -t installed_epic < <("$JQ" -r '.[] | "EPIC\n\(.app_name)\n\(.title)"' "$MOUNT_PATH"/legendary/installed.json | iconv -c)
+        mapfile -t installed_epic < <("$JQ" -r '.[] | "egs\n\(.app_name)\n\(.title)"' "$MOUNT_PATH"/legendary/installed.json | iconv -c)
     fi
 
     ##############################
     # AMAZON
     if [ -f "$MOUNT_PATH"/nile/installed.json ]; then
         to_debug_file "[INFO] read_installed_games: Searching installed games on AMAZON."
-        mapfile -t installed_amz < <("$JQ" -r '.[] | "AMAZON\n\(.id)\n\(.path)"' "$MOUNT_PATH"/nile/installed.json | sed 's/.*\\\(.*\)/\1/' | iconv -c)
+        mapfile -t installed_amz < <("$JQ" -r '.[] | "amazon\n\(.id)\n\(.path)"' "$MOUNT_PATH"/nile/installed.json | sed 's/.*\\\(.*\)/\1/' | iconv -c)
     fi
     
     INSTALLED_GAMES=("${installed_gog[@]}" "${installed_epic[@]}" "${installed_amz[@]}")
@@ -915,8 +941,9 @@ function installMenu() {
 
     while [ $__boton -ne 1 ] && [ $__boton -ne 252 ]; do
         __salida=$("$YAD" "$TITLE" "$ICON" --center --list --width=640 --height=400 --hide-column=2 --sticky --no-markup --buttons-layout=spread \
-            --button="Hyper-Connect to Steam!$ADD_ICON!Add a game to Steam using third-party launchers on Windows, search the protonfix in umu-databas, link the prefix, ...":0 \
-            --button="Only Create UMU-Prefix!$UMU_ICON!Create the prefix applying the fixes on umu-database. NOT add to Steam":10 \
+            --button="All-in-one!$ADD_ICON!Add a game to Steam using third-party launchers on Windows, search the protonfix in umu-databas, link the prefix, ...":0 \
+            --button="Create .bat!$UMU_ICON!Create the bat executable file. NOT add to Steam":20 \
+            --button="Create Prefix!$UMU_ICON!Create the prefix applying the fixes on umu-database. NOT add to Steam":10 \
             --button="Cancel!$EXIT_ICON!Cancel this menu":252 \
             --column=Store --column=ID --column=Title "${INSTALLED_GAMES[@]}")
 
@@ -933,7 +960,13 @@ function installMenu() {
         case $__boton in
         0)  do_install_game "$__name" "$__store" "$__id" ;;
         10) to_debug_file "[INFO] InstallMenu: Start UMU-Prefix."
-            prepare_umu-prefix umu-"$__id" "$__store"
+            prepare_umu-prefix "$__id" "$__store"
+            ;;
+        20)
+            if show_question "$NOMBRE will create the bat file. This file is the executable to run the game on proton.\nWould you like to create the bat file?";then
+                create_bat "$(create_runner "$__store" "$__id")" "$__name"
+                show_info "File $__name created"
+            fi
             ;;
         *)  to_debug_file "[INFO] InstallMenu: Canceled." ;;
         esac
@@ -988,7 +1021,7 @@ function optionMenu() {
 function aboutMenu() {
     "$YAD" "$TITLE" "$ICON" --about --fixed --pname="$NOMBRE" --pversion="$VERSION" --comments='Plugin, add-on, companion to our Heroic Games Launcher. In addition, a UMU client and a UMU prefix creator.' \
         --authors="Paco Guerrero [fjgj1@hotmail.com]" --website="https://github.com/FranjeGueje"
-    show_info "Versions:\n\t*Legendary (Windows) - 0.20.34\n\t*Nile (Windows) - 1.1.2\n\t*GOGDL (Windows) - 2.15.2\n\t*UMU-launcher - version 1.2.6 (3.11.7 (main, Jan 29 2024, 16:03:57) [GCC 13.2.1 20230801])'\n\n\
+    show_info "Versions:\n\t*Legendary (Windows) - 0.20.37\n\t*Nile (Windows) - 1.1.2\n\t*GOGDL (Windows) - 1.1.2\n\t*UMU-launcher - version 1.2.6 (3.11.7 (main, Jan 29 2024, 16:03:57) [GCC 13.2.1 20230801])'\n\n\
 Thanks to my family for their patience... My wife and children have earned heaven.\nAnd to you, my Elena." 
 }
 
