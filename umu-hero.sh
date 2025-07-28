@@ -18,7 +18,7 @@
 #
 function pre_launch(){
     NOMBRE="UMU-Hero"
-    VERSION=1.2
+    VERSION=1.3
 
     [ -z "$TOOLOPTIONFILE" ] && TOOLOPTIONFILE="$HOME/.config/umu-hero.conf"
     STEAM_DIR="$HOME/.local/share/Steam/"
@@ -644,19 +644,19 @@ function create_runner() {
 
     local __store=$1 __id=$2
     case "$__store" in
-    l | legendary | EPIC)
+    l | legendary | EPIC | egs)
         to_debug_file "[INFO] Create_runner: Creating a runner in legendary mode."
         # Buscar el juego en la configuración de instalados
         printf "@legendary launch %s\n" "$__id"
         ;;
-    g | gogdl | GOG)
+    g | gogdl | GOG | gog)
         to_debug_file "[INFO] Create_runner: Creating a runner in gogdl mode."
         # Buscar el juego en la configuración de instalados
         # shellcheck disable=SC2016
         game_path=$("$JQ" -r --arg v "$__id" '.installed[] | select(.appName == $v) | .install_path' "$MOUNT_PATH/gog_store/installed.json")
         printf '@gogdl --auth-config-path c:\\heroic\\gog_store\\auth.json launch --platform windows "%s" %s\n' "$game_path" "$__id"
         ;;
-    n | nile | AMAZON)
+    n | nile | AMAZON | amazon)
         to_debug_file "[INFO] Create_runner: Creating a runner in nile mode."
         # Buscar el juego en la configuración de instalados
         printf "@nile launch %s\n" "$__id"
