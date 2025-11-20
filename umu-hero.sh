@@ -21,12 +21,12 @@
 #!               Application functions
 #!####################################
 ##
-# Initialize the script
+# Initialize the script and global variables
 #
 function pre_launch(){
     # Identificación
     NOMBRE="UMU-Hero"
-    VERSION=2.0
+    VERSION=2.1
     # Configuración del usuario
     TOOLOPTIONFILE="${TOOLOPTIONFILE:-$HOME/.config/umu-hero.conf}"
     # Directorios principales
@@ -47,6 +47,11 @@ function pre_launch(){
     YAD="$BIN_PATH"yad
     SHORTCUTSNAMEID="$BIN_PATH"shortcutsNameID
     UMULAUNCHER="$BIN_PATH"umu-run
+    if command -v protontricks >/dev/null ;then
+        PROTONTRICKS=$(command -v protontricks)
+    else
+        PROTONTRICKS="/usr/bin/flatpak run com.github.Matoking.protontricks"
+    fi
     # Assets
     IMGICON="$TOOL_PATH/assets/icon.png"
     IMGSPLASH_DIR="$TOOL_PATH/assets/splash/"
@@ -56,6 +61,7 @@ function pre_launch(){
     EXIT_ICON="$TOOL_PATH/assets/cross.png"
     LIBRARY_ICON="$TOOL_PATH/assets/library.png"
     UMU_ICON="$TOOL_PATH/assets/umu-launcher.png"
+    TRICKS_ICON="$TOOL_PATH/assets/tricks.png"
     FIXES_ICON="$TOOL_PATH/assets/fixes.png"
     SAVE_ICON="$TOOL_PATH/assets/save.png"
     UPDATE_ICON="$TOOL_PATH/assets/update.png"
@@ -64,6 +70,8 @@ function pre_launch(){
     HEROIC_ICON="$TOOL_PATH/assets/heroic.png"
     UBISOFT_ICON="$TOOL_PATH/assets/ubisoft.png"
     FILE_ICON="$TOOL_PATH/assets/file.png"
+    TRASH_ICON="$TOOL_PATH/assets/trash.png"
+    EYE_ICON="$TOOL_PATH/assets/eye.png"
     # Parámetros de interfaz
     TITLE="--title=$NOMBRE - v$VERSION"
     ICON="--window-icon=$IMGICON"
@@ -122,15 +130,17 @@ function load_options() {
         line=$(head -n1 "$TOOLOPTIONFILE")
         # Validar que la línea no esté vacía
         if [ -n "$line" ]; then
-            local opt_heroic opt_runners opt_grid
-            IFS='|' read -r opt_heroic opt_runners opt_grid <<< "$line"
+            local opt_heroic opt_runners opt_grid opt_protontricks
+            IFS='|' read -r opt_heroic opt_runners opt_grid opt_protontricks <<< "$line"
 
             HEROIC_CONFIG_DIR="${HEROIC_CONFIG_DIR:-$opt_heroic}"
             RUNNERS_PATH="${RUNNERS_PATH:-$opt_runners}"
             GRIDKEY="${opt_grid:-0}"
+            PROTONTRICKS="${opt_protontricks:-$PROTONTRICKS}"
             to_debug_file "[INFO] HEROIC_CONFIG_DIR=$HEROIC_CONFIG_DIR"
             to_debug_file "[INFO] RUNNERS_PATH=$RUNNERS_PATH"
             to_debug_file "[INFO] GRIDKEY=XXXX"
+            to_debug_file "[INFO] PROTONTRICKS=$PROTONTRICKS"
             return 0
         else
             to_debug_file "[ERROR] $TOOLOPTIONFILE empty, using default options"
@@ -148,7 +158,7 @@ function load_options() {
 # Save the options to a file
 #
 function save_options() {
-    printf "%s|%s|%s" "$HEROIC_CONFIG_DIR" "$RUNNERS_PATH" "$GRIDKEY" > "$TOOLOPTIONFILE"
+    printf "%s|%s|%s|%s" "$HEROIC_CONFIG_DIR" "$RUNNERS_PATH" "$GRIDKEY" "$PROTONTRICKS" > "$TOOLOPTIONFILE"
 }
 
 #!##############################################################################################################################################################
@@ -780,8 +790,8 @@ Are you sure to continue?";then
         fBarra "Please, wait... YES, be pacient...\n\n$NOMBRE is adding the game to Steam." & 
         sleep 1
         __id_steam=$(add_steam_game "$RUNNERS_PATH"/"$__name".bat)
-        fBarraStop
         __r=$?
+        fBarraStop
 
         case "$__r" in
             # All ok
@@ -884,10 +894,9 @@ function create_Ubi_sh() {
     fi
 
     local __id=$1 __name="$RUNNERS_PATH/$2" __pfx=$3
-    printf "#!/bin/bash\nflatpak run com.github.Matoking.protontricks --no-bwrap -c 'wine start %s' %s\nexit \$?\n" \
-        "$__id" "$__pfx" > "$__name"
+    printf "#!/bin/bash\n%s --no-bwrap -c 'wine start %s' %s\nexit \$?\n" \
+        "$PROTONTRICKS" "$__id" "$__pfx" > "$__name"
     chmod +x "$__name"
-    to_debug_file "[INFO] create_Ubi_sh: file $__name created with content:\n $(cat "$__name")"
     if [ -f "$__name" ];then
         to_debug_file "[INFO] create_Ubi_sh: file $__name created with content:\n $(cat "$__name")"
         return 0
@@ -944,14 +953,16 @@ function mainMenu() {
         --button="Add Games!$LIBRARY_ICON!Add your games to Steam":0 \
         --button="UMU Prefix!$UMU_ICON!Prepare an extra Wine Prefix":2 \
         --button="Options!$OPTION_ICON!Set the options":1 \
+        --button="Protontricks!$TRICKS_ICON!Tools for games":3 \
         --button="Exit!$EXIT_ICON!Exit from $NOMBRE":252 \
         --align=center --buttons-layout=edge --undecorated --fixed
     local __boton=$?
     
     case $__boton in
-        0)  addGame ;;
+        0)  addGameMenu ;;
         1)  optionMenu ;;
         2)  umuMenu ;;
+        3)  tricksMenu ;;
         *)  if show_question "Are you sure you want to leave?";then
                 __boton=252
             else
@@ -966,28 +977,70 @@ function mainMenu() {
 ##
 # Show the Window to add games
 #
-function addGame() {
-    to_debug_file "[INFO] addGame: *** Entering in add Menu."
+function addGameMenu() {
+    to_debug_file "[INFO] addGameMenu: *** Entering in add Menu."
     __salida=$("$YAD" "$TITLE" "$ICON" --no-markup \
             --button="From Heroic!$HEROIC_ICON!Add a game to Steam from Heroic":0 \
             --button="From Ubisoft!$UBISOFT_ICON!Add a game to Steam from Ubisoft":10 \
             --button="From a file!$FILE_ICON!Add a game to Steam from Ubisoft":20 \
-            --button="Back!$EXIT_ICON!Back to main menu":30 \
+            --button="Manage!$LIBRARY_ICON!Manage your icons":30 \
+            --button="Back!$EXIT_ICON!Back to main menu":40 \
             --undecorated --fixed)
 
     local __boton=$?
 
     case $__boton in
-    0)  HeroicMenu ;;
-    10) UbisoftMenu
-        ;;
-    20) FileMenu
-        ;;
-    *)  to_debug_file "[INFO] addGame: Canceled." ;;
+        0)  HeroicMenu ;;
+        10) UbisoftMenu ;;
+        20) FileMenu ;;
+        30) ManageMenu ;;
+        *)  to_debug_file "[INFO] addGameMenu: Canceled." ;;
     esac
-    to_debug_file "[INFO] addGame: *** Exiting the menu to add a new game..."
+    to_debug_file "[INFO] addGameMenu: *** Exiting the menu to add a new game..."
 }
 
+##
+# Show the ManageMenu Window to manage games
+#
+function ManageMenu() {
+    to_debug_file "[INFO] ManageMenu: *** Entering in add Menu."
+    local __salida
+    while true; do
+        __salida=$(find "$RUNNERS_PATH" -maxdepth 1 -type f -exec basename {} \; | "$YAD" "$TITLE" "$ICON" \
+                --center --on-top --list --width=800 --height=600 --sticky --no-markup --buttons-layout=spread \
+                --button="Delete file!$TRASH_ICON!Delete the file from disk":2 \
+                --button="Show content!$EYE_ICON!Show the content of file on disk":0 --button="Back!$EXIT_ICON":1 \
+                --column=Filename)
+
+        local __boton=$?
+        local __file
+
+        case $__boton in
+        0)  __file="$(echo "$__salida" | cut -f1 -d '|')"
+            if [ -n "$__file" ]; then
+                "$YAD" "$TITLE" "$ICON" --center --on-top --width=800 --height=400 --sticky --no-markup --text-info \
+                    --filename="$RUNNERS_PATH"/"$(echo "$__salida" | cut -f1 -d '|')" --button="OK":0
+            else
+                show_info "You did not select any files."
+            fi
+            ;;
+        2)  __file="$(echo "$__salida" | cut -f1 -d '|')"
+            if [ -n "$__file" ]; then
+                if show_question "Are you sure that you want delete the file $RUNNERS_PATH/$__file?";then
+                    rm -f "$RUNNERS_PATH/$__file"
+                    to_debug_file "[INFO] ManageMenu: file $RUNNERS_PATH/$__file deleted."
+                fi
+            else
+                show_info "You did not select any files."
+            fi
+            ;;
+        *)  to_debug_file "[INFO] ManageMenu: Canceled."
+            break
+            ;;
+        esac
+    done
+    to_debug_file "[INFO] ManageMenu: *** Exiting the menu to add a new game..."
+}
 ##
 # Menu for UMU Database
 # $1 = source varname ( [OPTIONAL] text to search)
@@ -1076,15 +1129,14 @@ function optionMenu() {
         --buttons-layout=edge --align=center \
         --field="Where is the heroic config directory?:LBL" --field="Heroic config dir:DIR" '' "$HEROIC_CONFIG_DIR" \
         --field="Where will save the the exe files for run the games?:LBL" --field="Heroic runner dir:DIR" '' "$RUNNERS_PATH" \
-        --field="Steamgriddb key:" "$GRIDKEY" )
+        --field="Steamgriddb key:" "$GRIDKEY" \
+        --field="Protrontricks path:" "$PROTONTRICKS" )
 
     local __boton=$?
 
     case "$__boton" in
         0)
-            HEROIC_CONFIG_DIR=$(echo "$__salida" | cut -d'|' -f2)
-            RUNNERS_PATH=$(echo "$__salida" | cut -d'|' -f4)
-            GRIDKEY=$(echo "$__salida" | cut -d'|' -f5)
+            IFS='|' read -r _ HEROIC_CONFIG_DIR _ RUNNERS_PATH GRIDKEY PROTONTRICKS <<<"$__salida"
             [ "$GRIDKEY" == "" ] && GRIDKEY=0
             save_options
             to_debug_file "[INFO] optionMenu: Setting the options and save them in $TOOLOPTIONFILE"
@@ -1100,6 +1152,69 @@ function optionMenu() {
             ;;
     esac
     to_debug_file "[INFO] optionMenu: *** Exiting from Option Menu."
+}
+
+##
+# Show the Tricks Menu Window
+#
+function tricksMenu() {
+    to_debug_file "[INFO] tricksMenu: *** Entering in Option Menu."
+    local __salida=
+
+    __salida=$("$YAD" "$TITLE" "$ICON" --no-markup \
+            --button="Run Protontricks!$TRICKS_ICON!Run the Protontricks util":0 \
+            --button="Run an exe!$TRICKS_ICON!Run an executable in default prefix":10 \
+            --button="Create a prefix!$TRICKS_ICON!Create a random prefix":20 \
+            --undecorated --fixed)
+
+    local __boton=$?
+
+    case $__boton in
+        0)  $PROTONTRICKS --gui ;;
+        10) local __PROTONTRICKS_LAUNCH
+            if command -v protontricks-launch >/dev/null ;then
+                __PROTONTRICKS_LAUNCH=$(command -v protontricks-launch)
+            elif /usr/bin/flatpak run --command=protontricks-launch com.github.Matoking.protontricks --help >/dev/null 2>&1; then
+                __PROTONTRICKS_LAUNCH="flatpak run --command=protontricks-launch com.github.Matoking.protontricks"
+            else
+                to_debug_file "[ERROR] tricksMenu: the protontricks-launch is not installed."
+                return
+            fi
+            local __salida
+            __salida=$("$YAD" "$TITLE" "$ICON" --center\
+                --file --width=640 --height=400 --sticky --no-markup --buttons-layout=spread \
+                --button="Execute!$TRICKS_ICON!":0 \
+                --button="Cancel!$EXIT_ICON!Cancel this menu":252 \
+                )
+            local __boton=$?
+
+            if [ $__boton -eq 0 ];then
+                to_debug_file "[INFO] tricksMenu: Running the file $__salida"
+                $__PROTONTRICKS_LAUNCH --no-bwrap "$__salida"
+            fi
+            ;;
+        20) if show_question "Are you sure you want to add a non-existent game?\n\
+This will create a new entry in Steam that you will have to edit to make it functional. \
+You must change the executable and select a compatibility tool such as GE-Proton.";then
+                touch /tmp/umu-hero.null
+                fBarra "Please, wait... YES, be pacient...\n\n$NOMBRE is adding the NON-game to Steam." & 
+                sleep 1
+                local __id_steam __r
+                __id_steam=$(add_steam_game /tmp/umu-hero.null)
+                __r=$?
+                fBarraStop
+
+                case "$__r" in
+                    0)  show_info "Game created with id: $__id_steam."
+                    ;;
+                    *)  show_info "Game NOT created... There was an error"
+                    ;;
+                esac
+            fi
+            ;;
+        *)  to_debug_file "[INFO] tricksMenu: Canceled." ;;
+    esac
+    to_debug_file "[INFO] tricksMenu: *** Exiting from Option Menu."
 }
 
 ##
@@ -1259,8 +1374,8 @@ function UbisoftMenu() {
             fBarra "Please, wait... YES, be pacient...\n\n$NOMBRE is adding the game to Steam." & 
             sleep 1
             __id_steam=$(add_steam_game "$RUNNERS_PATH/$__name")
-            fBarraStop
             __r=$?
+            fBarraStop
 
             case "$__r" in
                 # All ok
@@ -1297,8 +1412,8 @@ function FileMenu() {
             fBarra "Please, wait... YES, be pacient...\n\n$NOMBRE is adding the game to Steam." & 
             sleep 1
             __id_steam=$(add_steam_game "$__salida")
-            fBarraStop
             __r=$?
+            fBarraStop
 
             case "$__r" in
                 # All ok
