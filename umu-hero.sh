@@ -26,7 +26,7 @@
 function pre_launch(){
     # Identificación
     NOMBRE="UMU-Hero"
-    VERSION=2.1
+    VERSION=2.3
     # Configuración del usuario
     TOOLOPTIONFILE="${TOOLOPTIONFILE:-$HOME/.config/umu-hero.conf}"
     # Directorios principales
@@ -625,15 +625,18 @@ function windowized_Heroic() {
     case "$1" in
     l | legendary)
         to_debug_file "[INFO] windowized_Heroic: legendary mode."
-        sed -s 's|"install_path":.*/\([^/]\+\)\"|"install_path": \"c:\\\\games\\\\\1\"|' < "$__archivo" > "$__salida"
+        #sed -s 's|"install_path":.*/\([^/]\+\)\"|"install_path": \"c:\\\\games\\\\\1\"|' < "$__archivo" > "$__salida"
+        "$JQ" 'map(.install_path |= "c:\\games\\" + (split("/") | last))' "$__archivo" > "$__salida"
         ;;
     g | gogdl)
         to_debug_file "[INFO] windowized_Heroic: gogdl mode."
-        sed -s 's|"install_path":.*/\([^/]\+\)\"|"install_path": \"c:\\\\games\\\\\1\"|' < "$__archivo" > "$__salida"
+        #sed -s 's|"install_path":.*/\([^/]\+\)\"|"install_path": \"c:\\\\games\\\\\1\"|' < "$__archivo" > "$__salida"
+        "$JQ" '.installed |= map(.install_path |= "c:\\games\\" + (split("/") | last))' "$__archivo" > "$__salida"
         ;;
     n | nile)
         to_debug_file "[INFO] windowized_Heroic: nile mode."
-        sed -s 's|"path":.*/\([^/]\+\)\"|"path":\"c:\\\\games\\\\\1\"|' < "$__archivo" > "$__salida"
+        #sed -s 's|"path":.*/\([^/]\+\)\"|"path":\"c:\\\\games\\\\\1\"|' < "$__archivo" > "$__salida"
+        "$JQ" 'map(.path |= "c:\\games\\" + (split("/") | last))' "$__archivo" > "$__salida"
         ;;
     esac
     return 0
@@ -876,6 +879,41 @@ function get_Heroic_protondir(){
     dirname "$("$JQ" -r ".\"$__id\".wineVersion.bin" "$HEROIC_CONFIG_DIR/GamesConfig/$__id.json")"
 }
 
+#!############################################################################################################################################################## 
+#!               File functions
+#!####################################
+##
+# Create File sh file
+# $1 = the command line to run
+# $2 = id of pfx on Steam
+#
+function create_file_sh() {
+    to_debug_file "[INFO] create_file_sh: *** $NOMBRE is creating a executable to run a file games."
+    if [ $# -ne 2 ]; then
+        to_debug_file "[ERROR] create_file_sh: you have called the function wrong. There are three parameters."
+        return 1
+    fi
+
+    local __exe=$1 __pfx=$2 __dir __name
+    __name="$RUNNERS_PATH/$(basename "$__exe")".sh
+    __dir=$(dirname "$__exe")
+
+    if [ -f "$__name" ];then
+        to_debug_file "[INFO] create_file_sh: The file already exists."
+        return 3
+    fi
+
+    printf "#!/bin/bash\n%s --no-bwrap -c 'wine start /d %s /exec %s' %s\nexit \$?\n" \
+        "$PROTONTRICKS" "$__dir" "$__exe" "$__pfx" > "$__name"
+    chmod +x "$__name"
+
+    if [ -f "$__name" ];then
+        to_debug_file "[INFO] create_file_sh: file $__name created with content:\n $(cat "$__name")"
+        return 0
+    fi
+    to_debug_file "[ERROR] create_file_sh: the file $__name was not created."
+    return 2
+}
 
 #!############################################################################################################################################################## 
 #!               Ubi functions
@@ -982,7 +1020,7 @@ function addGameMenu() {
     __salida=$("$YAD" "$TITLE" "$ICON" --no-markup \
             --button="From Heroic!$HEROIC_ICON!Add a game to Steam from Heroic":0 \
             --button="From Ubisoft!$UBISOFT_ICON!Add a game to Steam from Ubisoft":10 \
-            --button="From a file!$FILE_ICON!Add a game to Steam from Ubisoft":20 \
+            --button="From a file!$FILE_ICON!Add a game to Steam from a file":20 \
             --button="Manage!$LIBRARY_ICON!Manage your icons":30 \
             --button="Back!$EXIT_ICON!Back to main menu":40 \
             --undecorated --fixed)
@@ -1223,7 +1261,7 @@ You must change the executable and select a compatibility tool such as GE-Proton
 function aboutMenu() {
     "$YAD" "$TITLE" "$ICON" --about --fixed --pname="$NOMBRE" --pversion="$VERSION" --comments='Plugin, add-on, companion to our Heroic Games Launcher. In addition, a UMU client and a UMU prefix creator.' \
         --authors="Paco Guerrero [fjgj1@hotmail.com]" --website="https://github.com/FranjeGueje"
-    show_info "Versions:\n\t*Legendary (Windows) - 0.20.37\n\t*Nile (Windows) - 1.1.2\n\t*GOGDL (Windows) - 1.1.2\n\t*UMU-launcher - version 1.2.6 (3.11.7 (main, Jan 29 2024, 16:03:57) [GCC 13.2.1 20230801])'\n\n\
+    show_info "Versions:\n\t*Legendary (Windows) - 0.20.37\n\t*Nile (Windows) - 1.1.2\n\t*GOGDL (Windows) - 1.1.2\n\t*UMU-launcher - version 1.3.0 (3.13.7 (main, Aug 16 2025, 15:55:01) [GCC 15.2.1 20250813])'\n\n\
 Thanks to my family for their patience... My wife and children have earned heaven.\nAnd to you, my Elena." 
 }
 
@@ -1399,19 +1437,41 @@ function UbisoftMenu() {
 #
 function FileMenu() {
     to_debug_file "[INFO] FileMenu: *** Entering in the Add file game "
+    local __games
+    __games=$($PROTONTRICKS -l | grep '(' |  tr '\n' '!')
     local __salida && __salida=$("$YAD" "$TITLE" "$ICON" --center\
-            --file --width=640 --height=400 --sticky --no-markup --buttons-layout=spread \
+            --file --width=640 --height=400 --sticky --no-markup --buttons-layout=spread)
+
+    __salida=$("$YAD" "$TITLE" "$ICON" --center\
+            --form --width=640 --height=400 --sticky --no-markup --buttons-layout=spread \
+            --field="Select your file:FL" "$__salida" \
+            --field="PREFIX:CB" 'NEW PREFIX!'"${__games::-1}" \
             --button="Add to Steam!$ADD_ICON!":0 \
             --button="Cancel!$EXIT_ICON!Cancel this menu":252 \
             )
     local __boton=$?
 
     if [ $__boton == 0 ];then
+        local __file __prefix
+        IFS='|' read -r __file __prefix <<< "$__salida"
+        [ "$__file" == "" ] && to_debug_file "[WARNING] FileMenu: *** Noting selected " && show_info "Noting selected" && return
+
+        if [[ "$__prefix" != "NEW PREFIX" ]];then
+            __prefix=$(echo "$__prefix" | grep -o '([0-9]\+)$' | tr -d '()')
+            if create_file_sh "$__file" "$__prefix";then
+                __file="$RUNNERS_PATH/$(basename "$__file")".sh
+            else
+                to_debug_file "[ERROR] FileMenu: *** Creating the sh file to $__file "
+                show_info "It's not possible to create the sh file to $__file"
+                return 1
+            fi
+        fi
+        
         if show_question "$NOMBRE will add the file to Steam like a game.\nWould you like to add the file?";then
             local __id_steam __r
             fBarra "Please, wait... YES, be pacient...\n\n$NOMBRE is adding the game to Steam." & 
             sleep 1
-            __id_steam=$(add_steam_game "$__salida")
+            __id_steam=$(add_steam_game "$__file")
             __r=$?
             fBarraStop
 
