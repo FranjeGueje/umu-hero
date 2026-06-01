@@ -26,7 +26,7 @@
 function pre_launch(){
     # Identificación
     NOMBRE="UMU-Hero"
-    VERSION=2.3
+    VERSION=2.4
     # Configuración del usuario
     TOOLOPTIONFILE="${TOOLOPTIONFILE:-$HOME/.config/umu-hero.conf}"
     # Directorios principales
