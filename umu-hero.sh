@@ -89,9 +89,10 @@ function update_new_version(){
         to_debug_file "[INFO] Check Updating for new version of $NOMBRE"
         # Es un appimage y si tengo internet
         if curl -s --head https://api.github.com --max-time 3 | grep "HTTP/" 2>/dev/null >/dev/null; then
-            local sha_web
-            sha_web=$(curl -L "$(curl -s https://api.github.com/repos/FranjeGueje/umu-hero/releases/latest \
-            | grep browser_download_url | cut -d '"' -f 4 | grep sha512sum 2>/dev/null)" 2>/dev/null)
+            local sha_web_url sha_web
+            sha_web_url=$(curl -s https://api.github.com/repos/FranjeGueje/umu-hero/releases/latest \
+                | "$JQ" -r '.assets[] | select(.name | contains("sha512sum")) | .browser_download_url' 2>/dev/null)
+            sha_web=$(curl -sL "$sha_web_url" 2>/dev/null)
             if diff <(sha512sum "$APPIMAGE" | cut -d ' ' -f1) <(echo "$sha_web" | cut -d ' ' -f1) >/dev/null 2>&1; then
                 to_debug_file "[INFO] Already latest version"
             else
@@ -99,7 +100,7 @@ function update_new_version(){
                     to_debug_file "[WARNING] Updating $NOMBRE"
                     local URL
                     URL=$(curl -s https://api.github.com/repos/FranjeGueje/umu-hero/releases/latest \
-                    | grep browser_download_url | cut -d '"' -f 4 | grep x86_64| grep ".AppImage")
+                        | "$JQ" -r '.assets[] | select(.name | (contains("x86_64") and contains(".AppImage"))) | .browser_download_url' 2>/dev/null)
                     
                     if curl -s -o "$APPIMAGE.bak" "$URL"; then
                         to_debug_file "[INFO] Uploaded to last version."
@@ -166,7 +167,7 @@ function save_options() {
 #!####################################
 ##
 # Save a msg to debug
-# $1 = Text to Debub file
+# $1 = Text to Debug file
 #
 function to_debug_file() {
     [ -n "$DEBUG" ] && printf "%s - %s\n" "$(date +"%Y-%m-%d %H:%M:%S")" "$1" 1>&2
@@ -392,9 +393,11 @@ function download_database() {
 #
 function show_fix() {
     local __umu_id=$1
+    local __sec_id
+    __sec_id=$(echo "$__umu_id" | cut -d '-' -f2)
 
-    if [ "$(find "$PROTONFIXES_PATH" "$__umu_id.*" -type f \( -name "$__umu_id.*" -o -name "$(echo "$__umu_id".* | cut -d '-' -f2)" \) | wc -l)" -gt 0 ]; then
-        find "$PROTONFIXES_PATH" "$__umu_id.*" -type f \( -name "$__umu_id.*" -o -name "$(echo "$__umu_id".* | cut -d '-' -f2)" \) -exec \
+    if [ "$(find "$PROTONFIXES_PATH" -type f \( -name "$__umu_id.*" -o -name "$__sec_id.*" \) | wc -l)" -gt 0 ]; then
+        find "$PROTONFIXES_PATH" -type f \( -name "$__umu_id.*" -o -name "$__sec_id.*" \) -exec \
             "$YAD" "$TITLE" "$ICON" --center --on-top --width=200 --height=400 --sticky --no-markup --text-info --text={} --filename={} --button="OK":0 \;
     else
         show_info "Game fix not found.\nConsider that there is no fix for the game and you can launch it without any configuration."
@@ -467,12 +470,12 @@ function prepare_umu-prefix() {
         local __umu_id
         if __umu_id=$(search_umu-game "$__store" "$__id");then
             to_debug_file "[INFO] prepare_umu-prefix: Game found on UMU-DATABASE."
-            show_info "Great! Game founded on UMU-DATABASE!"
+            show_info "Great! Game found on UMU-DATABASE!"
         else
             to_debug_file "[INFO] prepare_umu-prefix: Game NOT found on UMU-DATABASE. $NOMBRE will create the default prefix."
             __umu_id=0
         fi
-        fBarra "Please, wait... YES, be pacient...\n\n$NOMBRE is creating the prefix with the fixes." &  
+        fBarra "Please, wait... YES, be patient...\n\n$NOMBRE is creating the prefix with the fixes." &  
         sleep 1
         to_debug_file "[INFO] prepare_umu-prefix: WINEPREFIX=$__prefix GAMEID=$__umu_id PROTONPATH=$__proton STORE=$__store $UMULAUNCHER"
         WINEPREFIX="$__prefix" GAMEID="$__umu_id" PROTONPATH="$__proton" STORE="$__store" "$UMULAUNCHER" "exit"
@@ -538,7 +541,7 @@ function fBarra() {
     if [ -n "$1" ]; then
         __text="$1"
     else
-        local __text="Please, wait... YES, be pacient..."
+        local __text="Please, wait... YES, be patient..."
     fi
     (
     touch "$SEM"
@@ -597,10 +600,10 @@ function check_Heroic_config(){
     fi
     if [ ! -d "$RUNNERS_PATH" ];then
         if mkdir -p "$RUNNERS_PATH" ;then
-            to_debug_file "[INFO] check_Heroic_config: The DIR of RUNNER don't exists but we create a valid dir."
+            to_debug_file "[INFO] check_Heroic_config: The DIR of RUNNER doesn't exist but we create a valid dir."
         else
-            to_debug_file "[ERROR] check_Heroic_config: The DIR of RUNNER don't exists but we CANNOT create a valid dir."
-            echo "[ERROR] check_Heroic_config: The DIR of RUNNER don't exists but we CANNOT create a valid dir."
+            to_debug_file "[ERROR] check_Heroic_config: The DIR of RUNNER doesn't exist but we CANNOT create a valid dir."
+            echo "[ERROR] check_Heroic_config: The DIR of RUNNER doesn't exist but we CANNOT create a valid dir."
             exit 1
         fi
     fi
@@ -694,7 +697,7 @@ function load_Heroic_config() {
         ln -s "$__heroic/nile_config/nile/"* "$__mount"/nile/.
         mv "$__mount"/nile/installed.json "$__mount"/nile/installed
         windowized_Heroic n "$__mount"/nile/installed
-        to_debug_file "[INFO] Load_Heroic_config: the legendary config is created."
+        to_debug_file "[INFO] Load_Heroic_config: the nile config is created."
     fi
     return 0
 }
@@ -711,7 +714,7 @@ function symbolic_Heroic_links() {
 }
 
 ##
-# Create the runner for Heoic - the executable file
+# Create the runner for Heroic - the executable file
 # $1 = store {l,g,n} (legendary gogdl or nile)
 # $2 = id of game
 #
@@ -829,7 +832,7 @@ Are you sure to continue?";then
 # Read installed games
 #
 function get_Heroic_games() {
-    local installed_gog=installed_epic=installed_amz
+    local installed_gog installed_epic installed_amz
 
     to_debug_file "[INFO] get_Heroic_games: *** Searching installed games."
     ##############################
@@ -842,7 +845,7 @@ function get_Heroic_games() {
     ##############################
     # EPIC
     if [ -f "$MOUNT_PATH"/legendary/installed.json ]; then
-        to_debug_file "[INFO] get_Heroic_games: Searching installed games on EPID."
+        to_debug_file "[INFO] get_Heroic_games: Searching installed games on EPIC."
         mapfile -t installed_epic < <("$JQ" -r '.[] | "egs\n\(.app_name)\n\(.title)"' "$MOUNT_PATH"/legendary/installed.json | iconv -c)
     fi
 
@@ -890,7 +893,7 @@ function get_Heroic_protondir(){
 function create_file_sh() {
     to_debug_file "[INFO] create_file_sh: *** $NOMBRE is creating a executable to run a file games."
     if [ $# -ne 2 ]; then
-        to_debug_file "[ERROR] create_file_sh: you have called the function wrong. There are three parameters."
+        to_debug_file "[ERROR] create_file_sh: you have called the function wrong. There are two parameters."
         return 1
     fi
 
@@ -1111,7 +1114,7 @@ function umuMenu() {
             --button="Search Title!$SEARCH_ICON":3 --button="Update UMU-Database!$UPDATE_ICON":2 \
             --button="Show Fix!$FIXES_ICON":4 \
             --button="Create UMU-Prefix...!$UMU_ICON!Create a prefix":0 --button="Back!$EXIT_ICON":1 \
-            --column=TITLE --column=UMU_ID --column=STORE --column=CONDENAME --column=ACRONYM --column=NOTES "${DATABASE[@]}")
+            --column=TITLE --column=UMU_ID --column=STORE --column=CODENAME --column=ACRONYM --column=NOTES "${DATABASE[@]}")
 
         local __boton=$?
         local __title=__umu_id=__store=__codename=__acronym=__notes=0
@@ -1139,7 +1142,7 @@ function umuMenu() {
         3)
             # SearchMenu
             __salida=$("$YAD" "$TITLE" "$ICON" --center --on-top --no-escape --button="OK":0 --form --field="Title:")
-            __salida=${__salida::-1} ; __salida=$(echo "$__salida" | tr '[:upper:]' '[:lower:]')
+            __salida=${__salida%?} ; __salida=$(echo "$__salida" | tr '[:upper:]' '[:lower:]')
             umuMenu "$__salida"
             break
             ;;
@@ -1259,7 +1262,7 @@ You must change the executable and select a compatibility tool such as GE-Proton
 # Show the ABOUT Window
 #
 function aboutMenu() {
-    "$YAD" "$TITLE" "$ICON" --about --fixed --pname="$NOMBRE" --pversion="$VERSION" --comments='Plugin, add-on, companion to our Heroic Games Launcher. In addition, a UMU client and a UMU prefix creator.' \
+    "$YAD" "$TITLE" "$ICON" --about --fixed --pname="$NOMBRE" --pversion="$VERSION" --comments='Plugin, add-on, companion to the Heroic Games Launcher. In addition, a UMU client and a UMU prefix creator.' \
         --authors="Paco Guerrero [fjgj1@hotmail.com]" --website="https://github.com/FranjeGueje"
     show_info "Versions:\n\t*Legendary (Windows) - 0.20.37\n\t*Nile (Windows) - 1.1.2\n\t*GOGDL (Windows) - 1.1.2\n\t*UMU-launcher - version 1.3.0 (3.13.7 (main, Aug 16 2025, 15:55:01) [GCC 15.2.1 20250813])'\n\n\
 Thanks to my family for their patience... My wife and children have earned heaven.\nAnd to you, my Elena." 
@@ -1297,7 +1300,7 @@ function prefixMenu() {
     local __boton=0
     __salida=$("$YAD" "$TITLE" "$ICON" --center --on-top --form --width=200 --height=100 --sticky --no-markup --fixed --buttons-layout=spread \
             --field="Title:":RO "$__title" --field="Proton:!Proton to use":CB "${__proton::-1}" --field="Prefix:!Where the prefix will be created":DIR "" \
-            --button="Create!$CREATE_PREFIX_ICON!Create a new prefix in this locatio":0 --button="Back!$EXIT_ICON!Return to last menu":1)
+            --button="Create!$CREATE_PREFIX_ICON!Create a new prefix in this location":0 --button="Back!$EXIT_ICON!Return to last menu":1)
     __boton=$?
 
     if [ -n "$__salida" ];then
@@ -1347,7 +1350,7 @@ function HeroicMenu() {
 
     while [ $__boton -ne 1 ] && [ $__boton -ne 252 ]; do
         __salida=$("$YAD" "$TITLE" "$ICON" --center --list --width=640 --height=400 --hide-column=2 --sticky --no-markup --buttons-layout=spread \
-            --button="All-in-one!$ADD_ICON!Add a game to Steam using third-party launchers on Windows, search the protonfix in umu-databas, link the prefix, ...":0 \
+            --button="All-in-one!$ADD_ICON!Add a game to Steam using third-party launchers on Windows, search the protonfix in umu-database, link the prefix, ...":0 \
             --button="Create .bat!$UMU_ICON!Create the bat executable file. NOT add to Steam":20 \
             --button="Create Prefix!$UMU_ICON!Create the prefix applying the fixes on umu-database. NOT add to Steam":10 \
             --button="Cancel!$EXIT_ICON!Cancel this menu":252 \
@@ -1454,7 +1457,7 @@ function FileMenu() {
     if [ $__boton == 0 ];then
         local __file __prefix
         IFS='|' read -r __file __prefix <<< "$__salida"
-        [ "$__file" == "" ] && to_debug_file "[WARNING] FileMenu: *** Noting selected " && show_info "Noting selected" && return
+        [ "$__file" == "" ] && to_debug_file "[WARNING] FileMenu: *** Nothing selected " && show_info "Nothing selected" && return
 
         if [[ "$__prefix" != "NEW PREFIX" ]];then
             __prefix=$(echo "$__prefix" | grep -o '([0-9]\+)$' | tr -d '()')
